@@ -1,5 +1,4 @@
 # Kepler.jl
-# todo: vectorise plot exprs with @.
 
 using OrdinaryDiffEq, ForwardDiff, MINPACK, LinearAlgebra, Plots
 
@@ -37,13 +36,13 @@ end
 
 ## Problem definition
 
-cTmax = (3600^2) / 1e6                                              # Conversion from Newtons
-mass0 = 1500                                                        # Initial mass of the spacecraft
-β = 1.42e-02                                                        # Engine specific impulsion
-μ = 5165.8620912                                                    # Earth gravitation constant
-t0 = 0                                                              # Initial time (final time is free)
-x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]         # Initial state (fixed initial longitude)
-xf_fixed = [ 42.165, 0, 0, 0, 0 ]                           # Final state (free final longitude)
+cTmax = (3600^2) / 1e6                     # Conversion from Newtons
+mass0 = 1500                               # Initial mass of the spacecraft
+β = 1.42e-02                               # Engine specific impulsion
+μ = 5165.8620912                           # Earth gravitation constant
+t0 = 0                                     # Initial time (final time is free)
+x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]   # Initial state (fixed initial longitude)
+xf_fixed = [ 42.165, 0, 0, 0, 0 ]          # Final state (free final longitude)
 
 #Tmax = cTmax * 60.; tf = 15.2055; p0 = -[ .361266, 22.2412, 7.87736, 0, 0, -5.90802 ]
 Tmax = cTmax * 6.0; tf = 1.320e2; p0 = -[ -4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00 ]
@@ -66,7 +65,7 @@ function h(t, x, p)
     pdm = sqrt(pa/μ)
     cl = cos(lg)
     sl = sin(lg)
-    w = 1.0 + ex*cl + ey*sl
+    w = 1 + ex*cl + ey*sl
     pdmw = pdm / w
     zz = hx*sl - hy*cl
     uh = (1 + hx^2 + hy^2) / 2
@@ -78,7 +77,7 @@ function h(t, x, p)
     f13 = pdm * (-cl)
     h1  = p[2]*f12 + p[3]*f13
 
-    f21 = pdm * 2.0 * pa / w
+    f21 = pdm * 2 * pa / w
     f22 = pdm * (cl + (ex + cl) / w)
     f23 = pdm * (sl + (ey + sl) / w)
     h2  = p[1]*f21 + p[2]*f22 + p[3]*f23
