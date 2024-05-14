@@ -36,19 +36,22 @@ end
 
 ## Problem definition
 
-cTmax = (3600^2) / 1e6                     # Conversion from Newtons
-mass0 = 1500                               # Initial mass of the spacecraft
-β = 1.42e-02                               # Engine specific impulsion
+Tmax = 6                                   # maximum thrust
+cTmax = (3600^2) / 1e6                     # conversion from Newtons to kg . Mm / h²
+mass0 = 1500                               # initial mass of the spacecraft
+β = 1.42e-02                               # engine specific impulsion
 μ = 5165.8620912                           # Earth gravitation constant
-t0 = 0                                     # Initial time (final time is free)
-x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]   # Initial state (fixed initial longitude)
-xf_fixed = [ 42.165, 0, 0, 0, 0 ]          # Final state (free final longitude)
+t0 = 0                                     # initial time (final time is free)
+x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]   # initial state (fixed initial longitude)
+xf_fixed = [ 42.165, 0, 0, 0, 0 ]          # final state (free final longitude)
 
-#Tmax = cTmax * 60.; tf = 15.2055; p0 = -[ .361266, 22.2412, 7.87736, 0, 0, -5.90802 ]
-Tmax = cTmax * 6.0; tf = 1.320e2; p0 = -[ -4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00 ]
-#Tmax = cTmax * 0.7; tf = 1.210e3; p0 = -[ -2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01 ]
-#Tmax = cTmax * 0.14; tf = 6.080e3; p0 = -[ -1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01 ]
+init = Dict{Real, Tuple{Real, Vector{Real}}}()
+tf = 15.2055; p0 = -[ .361266, 22.2412, 7.87736, 0, 0, -5.90802 ]; init[60] = (tf, p0)
+tf = 1.320e2; p0 = -[ -4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00 ]; init[6] = (tf, p0)
+tf = 1.210e3; p0 = -[ -2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01 ]; init[0.7] = (tf, p0)
+tf = 6.080e3; p0 = -[ -1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01 ]; init[0.14] = (tf, p0)
 
+tf, p0 = init[Tmax]; Tmax = cTmax * Tmax
 p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
 ξ = [ tf ; p0 ]; # initial guess
 
