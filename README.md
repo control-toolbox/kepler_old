@@ -1,2 +1,3 @@
-# kepler
-kepler
+# Kepler
+
+Numerical solution of Kepler problem
