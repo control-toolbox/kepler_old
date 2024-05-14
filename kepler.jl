@@ -12,7 +12,7 @@ function Flow(h; abstol=1e-12, reltol=1e-12)
 
     function rhs!(dz, z, dummy, t)
         n = size(z, 1) ÷ 2
-        foo = z -> h(z[1:n], z[n+1:2*n])
+        foo = z -> h(t, z[1:n], z[n+1:2*n])
         dh = grad(foo, z)
         dz[1:n] = dh[n+1:2n]
         dz[n+1:2n] = -dh[1:n]
