@@ -2,4 +2,4 @@
 
 Numerical solution of Kepler problem
 
-<img source="traj.gif" width=200>
+<img src="traj.gif" alt="Minimum time trajectory" width=200>
