@@ -1,42 +1,10 @@
-# Kepler.jl
+# 2bp.jl
 
-using OrdinaryDiffEq, ForwardDiff, MINPACK, LinearAlgebra, Plots
-
-## Auxiliary flow definition
-
-grad(f, x) = ForwardDiff.gradient(f, x)
-jac(f, x) = ForwardDiff.jacobian(f, x)
-
-function Flow(h; abstol=1e-12, reltol=1e-12)
-
-    function rhs!(dz, z, dummy, t)
-        n = size(z, 1) ÷ 2
-        foo = z -> h(t, z[1:n], z[n+1:2*n])
-        dh = grad(foo, z)
-        dz[1:n] = dh[n+1:2n]
-        dz[n+1:2n] = -dh[1:n]
-    end
-    
-    function f(tspan, x0, p0; abstol=abstol, reltol=reltol, saveat=[])
-        z0 = [ x0; p0 ]
-        ode = ODEProblem(rhs!, z0, tspan)
-        sol = OrdinaryDiffEq.solve(ode, Tsit5(), abstol=abstol, reltol=reltol, saveat=saveat)
-        return sol
-    end
-    
-    function f(t0, x0, p0, tf; abstol=abstol, reltol=reltol, saveat=[])
-        sol = f((t0, tf), x0, p0, abstol=abstol, reltol=reltol, saveat=saveat)
-        n = size(x0, 1)
-        return sol[1:n, end], sol[n+1:2*n, end]
-    end
-    
-    return f
-
-end
+using OptimalControl
 
 ## Problem definition
 
-Tmax = 6                                   # maximum thrust
+Tmax = 60                                  # maximum thrust
 cTmax = (3600^2) / 1e6                     # conversion from Newtons to kg . Mm / h²
 mass0 = 1500                               # initial mass of the spacecraft
 β = 1.42e-02                               # engine specific impulsion
@@ -57,7 +25,43 @@ p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
 
 ## Hamiltonian flow and shooting function
 
-function h(t, x, p)
+function F0(x)
+    pa, ex, ey, hx, hy, lg = x
+    pdm = sqrt(pa/μ)
+    w = 1 + ex*cl + ey*sl
+
+    F = zeros(eltype(x))
+    F[6] = w^2 / (pa*pdm)
+    return F
+end
+
+function F1(x)
+    pa, ex, ey, hx, hy, lg = x
+    pdm = sqrt(pa/μ)
+    cl = cos(lg)
+    sl = sin(lg)
+
+    F = zeros(eltype(x))
+    F[2] = pdm *   sl
+    F[3] = pdm * (-cl)
+    return F
+end
+
+function F2(x)
+    pa, ex, ey, hx, hy, lg = x
+    pdm = sqrt(pa/μ)
+    cl = cos(lg)
+    sl = sin(lg)
+    w = 1 + ex*cl + ey*sl
+
+    F = zeros(eltype(x))
+    F[1] = pdm * 2 * pa / w
+    F[2] = pdm * (cl + (ex + cl) / w)
+    F[3] = pdm * (sl + (ey + sl) / w)
+    return F
+end
+
+function F3(x)
     pa, ex, ey, hx, hy, lg = x
     pdm = sqrt(pa/μ)
     cl = cos(lg)
@@ -67,34 +71,36 @@ function h(t, x, p)
     zz = hx*sl - hy*cl
     uh = (1 + hx^2 + hy^2) / 2
 
-    f06 = w^2 / (pa*pdm)
-    h0  = p[6] * f06
+    F = zeros(eltype(x))
+    F[2] = pdmw * (-zz*ey)
+    F[3] = pdmw *   zz*ex
+    F[4] = pdmw * uh * cl
+    F[5] = pdmw * uh * sl
+    F[6] = pdmw * zz
+    return F
+end
 
-    f12 = pdm *   sl
-    f13 = pdm * (-cl)
-    h1  = p[2]*f12 + p[3]*f13
-
-    f21 = pdm * 2 * pa / w
-    f22 = pdm * (cl + (ex + cl) / w)
-    f23 = pdm * (sl + (ey + sl) / w)
-    h2  = p[1]*f21 + p[2]*f22 + p[3]*f23
-
-    f32 = pdmw * (-zz*ey)
-    f33 = pdmw *   zz*ex
-    f34 = pdmw * uh * cl
-    f35 = pdmw * uh * sl
-    f36 = pdmw * zz
-    h3  = p[2]*f32 + p[3]*f33 + p[4]*f34 + p[5]*f35 + p[6]*f36
-
-    mass = mass0 - β*Tmax*t
-
-    ψ = sqrt(h1^2 + h2^2 + h3^2)
-
-    r = -1 + h0 + (Tmax/mass) * ψ
+function u(t, x, p)
+    H1 = p .* F1(x)
+    H2 = p .* F2(x)
+    H3 = p .* F3(x)
+    r = [ H1, H2, H3 ]
+    r = norm(u)
     return r
 end
 
-f = Flow(h)
+@def ocp begin
+    tf ∈ R, variable
+    t ∈ [ 0, tf ], time
+    x ∈ R⁶, state
+    u ∈ R³, control
+
+    mass = mass0 - β*Tmax*t
+    ẋ(t) = F0(x(t)) + Tmax / mass * ( u1(t) * F1(x(t)) + u2(t) * F2(x(t)) + u3(t) * F3(x(t)) )
+    tf → min
+end
+
+f = Flow(ocp, u)
 
 function shoot(tf, p0)
     xf, pf = f(t0, x0, p0, tf)
@@ -128,8 +134,8 @@ ey = ode_sol[3, :]
 hx = ode_sol[4, :]
 hy = ode_sol[5, :]
 L  = ode_sol[6, :]
-cL = @. cos(L)
-sL = @. sin(L)
+cL = cos.(L)
+sL = sin.(L)
 W  = @. 1 + ex*cL + ey*sL
 Z  = @. hx*sL - hy*cL
 C  = @. 1 + hx^2 + hy^2
