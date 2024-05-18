@@ -13,18 +13,6 @@ t0 = 0                                     # initial time (final time is free)
 x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]   # initial state (fixed initial longitude)
 xf_fixed = [ 42.165, 0, 0, 0, 0 ]          # final state (free final longitude)
 
-init = Dict{Real, Tuple{Real, Vector{Real}}}()
-tf = 15.2055; p0 = -[ .361266, 22.2412, 7.87736, 0, 0, -5.90802 ]; init[60] = (tf, p0)
-tf = 1.320e2; p0 = -[ -4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00 ]; init[6] = (tf, p0)
-tf = 1.210e3; p0 = -[ -2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01 ]; init[0.7] = (tf, p0)
-tf = 6.080e3; p0 = -[ -1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01 ]; init[0.14] = (tf, p0)
-
-tf, p0 = init[Tmax]; Tmax = cTmax * Tmax
-p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
-ξ = [ tf ; p0 ]; # initial guess
-
-## Hamiltonian flow and shooting function
-
 function F0(x)
     pa, ex, ey, hx, hy, lg = x
     pdm = sqrt(pa/μ)
@@ -80,6 +68,17 @@ function F3(x)
     return F
 end
 
+@def ocp begin
+    tf ∈ R, variable
+    t ∈ [ t0, tf ], time
+    x ∈ R⁶, state
+    u ∈ R³, control
+
+    mass = mass0 - β*Tmax*t
+    ẋ(t) == F0(x(t)) + Tmax / mass * ( u1(t) * F1(x(t)) + u2(t) * F2(x(t)) + u3(t) * F3(x(t)) )
+    tf → min
+end
+
 function u(t, x, p)
     H1 = p .* F1(x)
     H2 = p .* F2(x)
@@ -87,17 +86,6 @@ function u(t, x, p)
     r = [ H1, H2, H3 ]
     r = norm(u)
     return r
-end
-
-@def ocp begin
-    tf ∈ R, variable
-    t ∈ [ 0, tf ], time
-    x ∈ R⁶, state
-    u ∈ R³, control
-
-    mass = mass0 - β*Tmax*t
-    ẋ(t) = F0(x(t)) + Tmax / mass * ( u1(t) * F1(x(t)) + u2(t) * F2(x(t)) + u3(t) * F3(x(t)) )
-    tf → min
 end
 
 f = Flow(ocp, u)
@@ -112,6 +100,17 @@ function shoot(tf, p0)
 end
 
 ## Solve
+
+init = Dict{Real, Tuple{Real, Vector{Real}}}()
+tf = 15.2055; p0 = -[ .361266, 22.2412, 7.87736, 0, 0, -5.90802 ]; init[60] = (tf, p0)
+tf = 1.320e2; p0 = -[ -4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00 ]; init[6] = (tf, p0)
+tf = 1.210e3; p0 = -[ -2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01 ]; init[0.7] = (tf, p0)
+tf = 6.080e3; p0 = -[ -1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01 ]; init[0.14] = (tf, p0)
+
+tf, p0 = init[Tmax]; Tmax = cTmax * Tmax
+p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
+ξ = [ tf ; p0 ]; # initial guess
+
 foo(ξ) = shoot(ξ[1], ξ[2:end])
 jfoo(ξ) = jac(foo, ξ)
 foo!(s, ξ) = ( s[:] = foo(ξ); nothing )
@@ -125,6 +124,8 @@ if nl_sol.converged
 else
     error("Not converged")
 end
+
+## Plots
 
 ode_sol = f((t0, tf), x0, p0)
 t  = ode_sol.t; N = size(t, 1)
@@ -143,9 +144,7 @@ q1 = @. P *( (1 + hx^2 - hy^2)*cL + 2*hx*hy*sL ) / (C*W)
 q2 = @. P *( (1 - hx^2 + hy^2)*sL + 2*hx*hy*cL ) / (C*W)
 q3 = @. 2*P*Z / (C*W)
 
-plt1 = plot3d(q1, q2, q3; xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
-
-plt2 = plot3d(1, xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
+plt1 = plot3d(1, xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
 @gif for i = 1:N
     push!(plt2, q1[i], q2[i], q3[i])
 end every N ÷ 100
