@@ -16,9 +16,11 @@ xf_fixed = [ 42.165, 0, 0, 0, 0 ]          # final state (free final longitude)
 function F0(x)
     pa, ex, ey, hx, hy, lg = x
     pdm = sqrt(pa/μ)
+    cl = cos(lg)
+    sl = sin(lg)
     w = 1 + ex*cl + ey*sl
 
-    F = zeros(eltype(x))
+    F = zeros(eltype(x), 6)
     F[6] = w^2 / (pa*pdm)
     return F
 end
@@ -29,7 +31,7 @@ function F1(x)
     cl = cos(lg)
     sl = sin(lg)
 
-    F = zeros(eltype(x))
+    F = zeros(eltype(x), 6)
     F[2] = pdm *   sl
     F[3] = pdm * (-cl)
     return F
@@ -42,7 +44,7 @@ function F2(x)
     sl = sin(lg)
     w = 1 + ex*cl + ey*sl
 
-    F = zeros(eltype(x))
+    F = zeros(eltype(x), 6)
     F[1] = pdm * 2 * pa / w
     F[2] = pdm * (cl + (ex + cl) / w)
     F[3] = pdm * (sl + (ey + sl) / w)
@@ -59,7 +61,7 @@ function F3(x)
     zz = hx*sl - hy*cl
     uh = (1 + hx^2 + hy^2) / 2
 
-    F = zeros(eltype(x))
+    F = zeros(eltype(x), 6)
     F[2] = pdmw * (-zz*ey)
     F[3] = pdmw *   zz*ex
     F[4] = pdmw * uh * cl
@@ -75,9 +77,11 @@ end
     u ∈ R³, control
 
     mass = mass0 - β*Tmax*t
-    ẋ(t) == F0(x(t)) + Tmax / mass * ( u1(t) * F1(x(t)) + u2(t) * F2(x(t)) + u3(t) * F3(x(t)) )
+    ẋ(t) == F0(x(t)) + Tmax / mass * ( u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)) )
     tf → min
 end
+
+## Shooting
 
 function u(t, x, p)
     H1 = p .* F1(x)
