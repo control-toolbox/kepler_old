@@ -1,10 +1,10 @@
 # 2bp.jl
 
-using OptimalControl
+using OptimalControl, LinearAlgebra, Plots
 
 ## Problem definition
 
-Tmax = 60                                  # maximum thrust
+Tmax = 0.14                                # maximum thrust
 cTmax = (3600^2) / 1e6                     # conversion from Newtons to kg . Mm / h²
 mass0 = 1500                               # initial mass of the spacecraft
 β = 1.42e-02                               # engine specific impulsion
@@ -83,16 +83,30 @@ end
 
 ## Shooting
 
-function u(t, x, p)
-    H1 = p .* F1(x)
-    H2 = p .* F2(x)
-    H3 = p .* F3(x)
+function u(t, x, p, tf)
+    H1 = p' * F1(x)
+    H2 = p' * F2(x)
+    H3 = p' * F3(x)
     r = [ H1, H2, H3 ]
-    r = norm(u)
+    r = r / norm(r)
     return r
 end
 
 f = Flow(ocp, u)
+
+h = (t, x, p) -> begin
+    H0 = p' * F0(x)
+    H1 = p' * F1(x)
+    H2 = p' * F2(x)
+    H3 = p' * F3(x)
+    mass = mass0 - β*Tmax*t
+    r = H0 + Tmax / mass * sqrt(H1^2 + H2^2 + H3^2) 
+    return r
+end
+
+h = Hamiltonian(h, autonomous=false)
+
+#f = Flow(h)
 
 function shoot(tf, p0)
     xf, pf = f(t0, x0, p0, tf)
@@ -116,7 +130,7 @@ p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
 ξ = [ tf ; p0 ]; # initial guess
 
 foo(ξ) = shoot(ξ[1], ξ[2:end])
-jfoo(ξ) = jac(foo, ξ)
+jfoo(ξ) = ForwardDiff.jacobian(foo, ξ)
 foo!(s, ξ) = ( s[:] = foo(ξ); nothing )
 jfoo!(js, ξ) = ( js[:] = jfoo(ξ); nothing )
 
@@ -131,7 +145,7 @@ end
 
 ## Plots
 
-ode_sol = f((t0, tf), x0, p0)
+ode_sol = f((t0, tf), x0, p0).ode_sol
 t  = ode_sol.t; N = size(t, 1)
 P  = ode_sol[1, :]
 ex = ode_sol[2, :]
@@ -150,5 +164,5 @@ q3 = @. 2*P*Z / (C*W)
 
 plt1 = plot3d(1, xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
 @gif for i = 1:N
-    push!(plt2, q1[i], q2[i], q3[i])
+    push!(plt1, q1[i], q2[i], q3[i])
 end every N ÷ 100
