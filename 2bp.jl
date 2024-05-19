@@ -1,10 +1,10 @@
 # 2bp.jl
 
-using OptimalControl, LinearAlgebra, Plots
+using OptimalControl, LinearAlgebra, ForwardDiff, MINPACK, Plots
 
 ## Problem definition
 
-Tmax = 0.14                                # maximum thrust
+Tmax = 60                                  # maximum thrust
 cTmax = (3600^2) / 1e6                     # conversion from Newtons to kg . Mm / h²
 mass0 = 1500                               # initial mass of the spacecraft
 β = 1.42e-02                               # engine specific impulsion
@@ -83,7 +83,7 @@ end
 
 ## Shooting
 
-function u(t, x, p, tf)
+function ur(t, x, p, tf) # regular maximising control 
     H1 = p' * F1(x)
     H2 = p' * F2(x)
     H3 = p' * F3(x)
@@ -92,9 +92,7 @@ function u(t, x, p, tf)
     return r
 end
 
-f = Flow(ocp, u)
-
-h = (t, x, p) -> begin
+hr = (t, x, p) -> begin # regular maximised Hamiltonian (more efficient)
     H0 = p' * F0(x)
     H1 = p' * F1(x)
     H2 = p' * F2(x)
@@ -104,9 +102,7 @@ h = (t, x, p) -> begin
     return r
 end
 
-h = Hamiltonian(h, autonomous=false)
-
-#f = Flow(h)
+hr = Hamiltonian(hr, autonomous=false)
 
 function shoot(tf, p0)
     xf, pf = f(t0, x0, p0, tf)
@@ -134,8 +130,11 @@ jfoo(ξ) = ForwardDiff.jacobian(foo, ξ)
 foo!(s, ξ) = ( s[:] = foo(ξ); nothing )
 jfoo!(js, ξ) = ( js[:] = jfoo(ξ); nothing )
 
-#nl_sol = fsolve(foo!,        ξ, show_trace=true); println(nl_sol)
-nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
+f = Flow(ocp, ur)
+@time nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
+
+f = Flow(hr)
+@time nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
 
 if nl_sol.converged
     tf = nl_sol.x[1]; p0 = nl_sol.x[2:end]
@@ -145,7 +144,7 @@ end
 
 ## Plots
 
-ode_sol = f((t0, tf), x0, p0).ode_sol
+ode_sol = f((t0, tf), x0, p0)
 t  = ode_sol.t; N = size(t, 1)
 P  = ode_sol[1, :]
 ex = ode_sol[2, :]
