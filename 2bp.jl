@@ -75,37 +75,26 @@ end
     t ∈ [ t0, tf ], time
     x ∈ R⁶, state
     u ∈ R³, control
-
     mass = mass0 - β*Tmax*t
     ẋ(t) == F0(x(t)) + Tmax / mass * ( u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)) )
     tf → min
 end
 
-## Shooting
+## Shooting (1/2)
 
 function ur(t, x, p, tf) # regular maximising control 
     H1 = p' * F1(x)
     H2 = p' * F2(x)
     H3 = p' * F3(x)
-    r = [ H1, H2, H3 ]
-    r = r / norm(r)
-    return r
+    u = [ H1, H2, H3 ]
+    u = u / norm(u)
+    return u
 end
 
-hr = (t, x, p) -> begin # regular maximised Hamiltonian (more efficient)
-    H0 = p' * F0(x)
-    H1 = p' * F1(x)
-    H2 = p' * F2(x)
-    H3 = p' * F3(x)
-    mass = mass0 - β*Tmax*t
-    r = H0 + Tmax / mass * sqrt(H1^2 + H2^2 + H3^2) 
-    return r
-end
-
-hr = Hamiltonian(hr, autonomous=false)
+fr = Flow(ocp, ur) # regular flow (1/2)
 
 function shoot(tf, p0)
-    xf, pf = f(t0, x0, p0, tf)
+    xf, pf = fr(t0, x0, p0, tf)
     s = zeros(eltype(tf), 7)
     s[1:5] = xf[1:5] - xf_fixed
     s[6] = pf[6]
@@ -130,10 +119,24 @@ jfoo(ξ) = ForwardDiff.jacobian(foo, ξ)
 foo!(s, ξ) = ( s[:] = foo(ξ); nothing )
 jfoo!(js, ξ) = ( js[:] = jfoo(ξ); nothing )
 
-f = Flow(ocp, ur)
 @time nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
 
-f = Flow(hr)
+## Shooting (2/2)
+
+hr = (t, x, p) -> begin # regular maximised Hamiltonian (more efficient)
+    H0 = p' * F0(x)
+    H1 = p' * F1(x)
+    H2 = p' * F2(x)
+    H3 = p' * F3(x)
+    mass = mass0 - β*Tmax*t
+    h = H0 + Tmax / mass * sqrt(H1^2 + H2^2 + H3^2) 
+    return h
+end
+
+hr = Hamiltonian(hr, autonomous=false)
+
+fr = Flow(hr) # regular flow (2/2)
+
 @time nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
 
 if nl_sol.converged
@@ -144,7 +147,7 @@ end
 
 ## Plots
 
-ode_sol = f((t0, tf), x0, p0)
+ode_sol = fr((t0, tf), x0, p0)
 t  = ode_sol.t; N = size(t, 1)
 P  = ode_sol[1, :]
 ex = ode_sol[2, :]
