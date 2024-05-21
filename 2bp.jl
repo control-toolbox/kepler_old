@@ -4,7 +4,7 @@ using OptimalControl, LinearAlgebra, ForwardDiff, MINPACK, Plots
 
 ## Problem definition
 
-Tmax = 60                                  # maximum thrust
+Tmax = 0.14                                # maximum thrust
 cTmax = (3600^2) / 1e6                     # conversion from Newtons to kg . Mm / h²
 mass0 = 1500                               # initial mass of the spacecraft
 β = 1.42e-02                               # engine specific impulsion
