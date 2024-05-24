@@ -4,14 +4,14 @@ using OptimalControl, LinearAlgebra, ForwardDiff, MINPACK, Plots
 
 ## Problem definition
 
-Tmax = 0.14                                # maximum thrust
-cTmax = (3600^2) / 1e6                     # conversion from Newtons to kg . Mm / h²
+Tmax = 60                                  # maximum thrust
+cTmax = (3600^2) / 1e6; T = Tmax * cTmax   # conversion from Newtons to kg . Mm / h²
 mass0 = 1500                               # initial mass of the spacecraft
 β = 1.42e-02                               # engine specific impulsion
 μ = 5165.8620912                           # Earth gravitation constant
 t0 = 0                                     # initial time (final time is free)
 x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]   # initial state (fixed initial longitude)
-xf_fixed = [ 42.165, 0, 0, 0, 0 ]          # final state (free final longitude)
+yf = [ 42.165, 0, 0, 0, 0 ]                # final state (free final longitude)
 
 function F0(x)
     pa, ex, ey, hx, hy, lg = x
@@ -75,10 +75,15 @@ end
     t ∈ [ t0, tf ], time
     x ∈ R⁶, state
     u ∈ R³, control
-    mass = mass0 - β*Tmax*t
-    ẋ(t) == F0(x(t)) + Tmax / mass * ( u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)) )
+    x(t0) == x0
+    x[1:5](tf) == yf
+    mass = mass0 - β*T*t
+    ẋ(t) == F0(x(t)) + T / mass * ( u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)) )
     tf → min
-end
+end true
+
+## Direct
+# nlp_sol = solve(ocp)
 
 ## Shooting (1/2)
 
@@ -96,7 +101,7 @@ fr = Flow(ocp, ur) # regular flow (1/2)
 function shoot(tf, p0)
     xf, pf = fr(t0, x0, p0, tf)
     s = zeros(eltype(tf), 7)
-    s[1:5] = xf[1:5] - xf_fixed
+    s[1:5] = xf[1:5] - yf
     s[6] = pf[6]
     s[7] = p0[1]^2 + p0[2]^2 + p0[3]^2 + p0[4]^2 + p0[5]^2 + p0[6]^2 - 1
     return s
@@ -110,7 +115,7 @@ tf = 1.320e2; p0 = -[ -4.743728539366440e+00, -7.171314869854240e+01, -2.7504683
 tf = 1.210e3; p0 = -[ -2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01 ]; init[0.7] = (tf, p0)
 tf = 6.080e3; p0 = -[ -1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01 ]; init[0.14] = (tf, p0)
 
-tf, p0 = init[Tmax]; Tmax = cTmax * Tmax
+tf, p0 = init[Tmax]
 p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
 ξ = [ tf ; p0 ]; # initial guess
 
@@ -119,7 +124,7 @@ jfoo(ξ) = ForwardDiff.jacobian(foo, ξ)
 foo!(s, ξ) = ( s[:] = foo(ξ); nothing )
 jfoo!(js, ξ) = ( js[:] = jfoo(ξ); nothing )
 
-@time nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
+@time bvp_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(bvp_sol)
 
 ## Shooting (2/2)
 
@@ -128,8 +133,8 @@ hr = (t, x, p) -> begin # regular maximised Hamiltonian (more efficient)
     H1 = p' * F1(x)
     H2 = p' * F2(x)
     H3 = p' * F3(x)
-    mass = mass0 - β*Tmax*t
-    h = H0 + Tmax / mass * sqrt(H1^2 + H2^2 + H3^2) 
+    mass = mass0 - β*T*t
+    h = H0 + T / mass * sqrt(H1^2 + H2^2 + H3^2) 
     return h
 end
 
@@ -137,10 +142,10 @@ hr = Hamiltonian(hr, autonomous=false)
 
 fr = Flow(hr) # regular flow (2/2)
 
-@time nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
+@time bvp_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(bvp_sol)
 
-if nl_sol.converged
-    tf = nl_sol.x[1]; p0 = nl_sol.x[2:end]
+if bvp_sol.converged
+    tf = bvp_sol.x[1]; p0 = bvp_sol.x[2:end]
 else
     error("Not converged")
 end
