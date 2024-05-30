@@ -1,6 +1,10 @@
 # 2bp.jl
 
-using OptimalControl, LinearAlgebra, ForwardDiff, MINPACK, Plots
+using OptimalControl
+using LinearAlgebra
+using ForwardDiff
+using MINPACK
+using Plots
 
 ## Problem definition
 
@@ -14,22 +18,22 @@ x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]   # initial state (fixed initial longi
 yf = [ 42.165, 0, 0, 0, 0 ]                # final state (free final longitude)
 
 function F0(x)
-    pa, ex, ey, hx, hy, lg = x
-    pdm = sqrt(pa/μ)
-    cl = cos(lg)
-    sl = sin(lg)
+    P, ex, ey, hx, hy, L = x
+    pdm = sqrt(P/μ)
+    cl = cos(L)
+    sl = sin(L)
     w = 1 + ex*cl + ey*sl
 
     F = zeros(eltype(x), 6)
-    F[6] = w^2 / (pa*pdm)
+    F[6] = w^2 / (P*pdm)
     return F
 end
 
 function F1(x)
-    pa, ex, ey, hx, hy, lg = x
-    pdm = sqrt(pa/μ)
-    cl = cos(lg)
-    sl = sin(lg)
+    P, ex, ey, hx, hy, L = x
+    pdm = sqrt(P/μ)
+    cl = cos(L)
+    sl = sin(L)
 
     F = zeros(eltype(x), 6)
     F[2] = pdm *   sl
@@ -38,24 +42,24 @@ function F1(x)
 end
 
 function F2(x)
-    pa, ex, ey, hx, hy, lg = x
-    pdm = sqrt(pa/μ)
-    cl = cos(lg)
-    sl = sin(lg)
+    P, ex, ey, hx, hy, L = x
+    pdm = sqrt(P/μ)
+    cl = cos(L)
+    sl = sin(L)
     w = 1 + ex*cl + ey*sl
 
     F = zeros(eltype(x), 6)
-    F[1] = pdm * 2 * pa / w
+    F[1] = pdm * 2 * P / w
     F[2] = pdm * (cl + (ex + cl) / w)
     F[3] = pdm * (sl + (ey + sl) / w)
     return F
 end
 
 function F3(x)
-    pa, ex, ey, hx, hy, lg = x
-    pdm = sqrt(pa/μ)
-    cl = cos(lg)
-    sl = sin(lg)
+    P, ex, ey, hx, hy, L = x
+    pdm = sqrt(P/μ)
+    cl = cos(L)
+    sl = sin(L)
     w = 1 + ex*cl + ey*sl
     pdmw = pdm / w
     zz = hx*sl - hy*cl
@@ -73,17 +77,18 @@ end
 @def ocp begin
     tf ∈ R, variable
     t ∈ [ t0, tf ], time
-    x ∈ R⁶, state
+    x = (P, ex, ey, hx, hy, L) ∈ R⁶, state
     u ∈ R³, control
     x(t0) == x0
     x[1:5](tf) == yf
-    mass = mass0 - β*T*t
+    mass = mass0 - β * T * t
     ẋ(t) == F0(x(t)) + T / mass * ( u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)) )
+    u₁(t)^2 + u₂(t)^2 + u₃(t)^2 ≤ 1
     tf → min
 end true
 
 ## Direct
-# nlp_sol = solve(ocp)
+#nlp_sol = solve(ocp; grid_size=100)
 
 ## Shooting (1/2)
 
