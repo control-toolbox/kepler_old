@@ -2,8 +2,10 @@
 
 using OptimalControl
 using NLPModelsIpopt
+using OrdinaryDiffEq
 using Plots
-using NonlinearSolve
+using MINPACK
+using ForwardDiff
 using LinearAlgebra: norm
 
 ## Problem definition. Mass in kg, distance in Mm, time in hours (h).
@@ -115,7 +117,7 @@ function ur(t, x, p, tf) # Regular maximising control
     H2 = p' * F2(x)
     H3 = p' * F3(x)
     u = [H1, H2, H3]
-    u = u / sqrt(u[1]^2 + u[2]^2  + u[3]^2)
+    u = u / sqrt(u[1]^2 + u[2]^2 + u[3]^2)
     return u
 end
 
@@ -123,7 +125,7 @@ fr = Flow(ocp, ur) # Regular flow (first version)
 
 function shoot(tf, p0)
     xf, pf = fr(t0, x0, p0, tf)
-    s = zeros(eltype(tf), 7)
+    s = zeros(eltype(tf), 7) # debug: use where T
     s[1:5] = xf[1:5] - yf
     s[6] = pf[6]
     s[7] = p0[1]^2 + p0[2]^2 + p0[3]^2 + p0[4]^2 + p0[5]^2 + p0[6]^2 - 1
@@ -135,8 +137,12 @@ end
 tf, p0 = init[Tmax]
 p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
 ξ = [tf ; p0]; # Initial guess
-nle = NonlinearProblem(ξ -> shoot(ξ[1], ξ[2:end]), ξ)
-@time bvp_sol = solve(nle; show_trace=Val(true)); println(bvp_sol)
+
+foo(ξ) = shoot(ξ[1], ξ[2:end])
+jfoo(ξ) = ForwardDiff.jacobian(foo, ξ)
+foo!(s, ξ) = (s[:] = foo(ξ); nothing)
+jfoo!(js, ξ) = (js[:] = jfoo(ξ); nothing)
+@time bvp_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(bvp_sol)
 
 ## Shooting (2/2)
 
@@ -152,8 +158,8 @@ end
 
 hr = Hamiltonian(hr; autonomous=false)
 fr = Flow(hr) # Regular flow (again)
-@time bvp_sol = solve(nle; show_trace=Val(true)); println(bvp_sol)
-tf = bvp_sol.u[1]; p0 = bvp_sol.u[2:end]
+@time bvp_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(bvp_sol)
+tf = bvp_sol.x[1]; p0 = bvp_sol.x[2:end]
 
 ## Plots
 
@@ -177,4 +183,4 @@ q3 = @. 2 * P * Z / (C * w)
 plt1 = plot3d(1; xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
 @gif for i = 1:N
     push!(plt1, q1[i], q2[i], q3[i])
-end every N ÷ 100
+end every N ÷ min(N, 100) 
