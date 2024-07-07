@@ -6,11 +6,11 @@ using OrdinaryDiffEq
 using Plots
 using MINPACK
 using ForwardDiff
-using LinearAlgebra: norm
+using LinearAlgebra
 
 ## Problem definition. Mass in kg, distance in Mm, time in hours (h).
 
-Tmax = 60                                  # Maximum thrust (Newtons)
+Tmax = 0.14                                # Maximum thrust (Newtons)
 cTmax = 3600^2 / 1e6; T = Tmax * cTmax     # Conversion from Newtons to kg x Mm / h²
 mass0 = 1500                               # Initial mass of the spacecraft
 β = 1.42e-02                               # Engine specific impulsion
@@ -107,7 +107,7 @@ tf = 6.080e3; p0 = -[-1.234155379067110e+02, -6.207170881591489e+02, 5.742554220
 ## Direct
 
 tf = init[Tmax][1] # debug: update init
-nlp_init = OCPInit(variable=tf)
+#nlp_init = OCPInit(variable=tf)
 #nlp_sol = solve(ocp; init=nlp_init, grid_size=100) # debug: to be tested
 
 ## Shooting (1/2)
@@ -137,7 +137,6 @@ end
 tf, p0 = init[Tmax]
 p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
 ξ = [tf ; p0]; # Initial guess
-
 foo(ξ) = shoot(ξ[1], ξ[2:end])
 jfoo(ξ) = ForwardDiff.jacobian(foo, ξ)
 foo!(s, ξ) = (s[:] = foo(ξ); nothing)
