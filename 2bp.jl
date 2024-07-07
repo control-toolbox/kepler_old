@@ -10,12 +10,11 @@ using LinearAlgebra
 
 ## Problem definition. Mass in kg, distance in Mm, time in hours (h).
 
-Tmax = 6                                   # Maximum thrust (Newtons)
+Tmax = 60                                  # Maximum thrust (Newtons)
 cTmax = 3600^2 / 1e6; T = Tmax * cTmax     # Conversion from Newtons to kg x Mm / h²
 mass0 = 1500                               # Initial mass of the spacecraft
 β = 1.42e-02                               # Engine specific impulsion
 μ = 5165.8620912                           # Earth gravitation constant
-t0 = 0                                     # Initial time (final time is free)
 x0 = [11.625, 0.75, 0, 6.12e-02, 0, π]     # Initial state (fixed initial longitude)
 yf = [42.165, 0, 0, 0, 0]                  # Final state (free final longitude)
 
@@ -74,10 +73,10 @@ end
 
 @def ocp begin
     tf ∈ R, variable
-    t ∈ [t0, tf], time
+    t ∈ [0, tf], time
     x = (P, ex, ey, hx, hy, L) ∈ R⁶, state
     u ∈ R³, control
-    x(t0) == x0
+    x(0) == x0
     x[1:5](tf) == yf
     mass = mass0 - β * T * t
     ẋ(t) == F0(x(t)) + T / mass * (u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)))
@@ -95,10 +94,11 @@ end
 ## Initialisations
 
 init = Dict{Real, Tuple{Real, Vector{Real}}}()
-tf = 15.2055; p0 = -[.361266, 22.2412, 7.87736, 0, 0, -5.90802]; init[60] = (tf, p0)
-tf = 1.320e2; p0 = -[-4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00]; init[6] = (tf, p0)
-tf = 1.210e3; p0 = -[-2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01]; init[0.7] = (tf, p0)
-tf = 6.080e3; p0 = -[-1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01]; init[0.14] = (tf, p0)
+#tf = 15.2055; p0 =-[.361266, 22.2412, 7.87736, 0, 0, -5.90802]; init[60] = (tf, p0)
+tf = 14.79640450270989; p0 = [-0.361266, -22.2412, -7.87736, -0.0, -0.0, 5.90802]; init[60] = (tf, p0)
+tf = 1.320e2; p0 =-[-4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00]; init[6] = (tf, p0)
+tf = 1.210e3; p0 =-[-2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01]; init[0.7] = (tf, p0)
+tf = 6.080e3; p0 =-[-1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01]; init[0.14] = (tf, p0)
 
 ## Direct
 
@@ -121,7 +121,7 @@ fr = Flow(ocp, ur) # Regular flow (first version)
 
 function shoot(ξ::Vector{T}) where T
     tf, p0 = ξ[1], ξ[2:end]
-    xf, pf = fr(t0, x0, p0, tf)
+    xf, pf = fr(0, x0, p0, tf)
     s = zeros(T, 7)
     s[1:5] = xf[1:5] - yf
     s[6] = pf[6]
@@ -133,10 +133,10 @@ end
 
 tf, p0 = init[Tmax]
 p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
-ξ = [tf ; p0]; # Initial guess
+ξ = [tf; p0]; # Initial guess
 jshoot(ξ) = ForwardDiff.jacobian(shoot, ξ)
-shoot!(s, ξ) = (s[:] = foo(ξ); nothing)
-jshoot!(js, ξ) = (js[:] = jfoo(ξ); nothing)
+shoot!(s, ξ) = (s[:] = shoot(ξ); nothing)
+jshoot!(js, ξ) = (js[:] = jshoot(ξ); nothing)
 @time bvp_sol = fsolve(shoot!, jshoot!, ξ, show_trace=true); println(bvp_sol)
 
 ## Shooting (2/2)
@@ -158,7 +158,7 @@ tf = bvp_sol.x[1]; p0 = bvp_sol.x[2:end]
 
 ## Plots
 
-ode_sol = fr((t0, tf), x0, p0)
+ode_sol = fr((0, tf), x0, p0)
 t  = ode_sol.t; N = size(t, 1)
 P  = ode_sol[1, :]
 ex = ode_sol[2, :]
