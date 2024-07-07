@@ -34,7 +34,7 @@ end
 
 function F1(x)
     P, ex, ey, hx, hy, L = x
-    pdm = sqrt(P/μ)
+    pdm = sqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     F = zeros(eltype(x), 6)
@@ -45,7 +45,7 @@ end
 
 function F2(x)
     P, ex, ey, hx, hy, L = x
-    pdm = sqrt(P/μ)
+    pdm = sqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     w = 1 + ex * cl + ey * sl
@@ -58,7 +58,7 @@ end
 
 function F3(x)
     P, ex, ey, hx, hy, L = x
-    pdm = sqrt(P/μ)
+    pdm = sqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     w = 1 + ex * cl + ey * sl
@@ -76,7 +76,7 @@ end
 
 ## Initial guess
 
-tf = 15.0                                    # Estimation of final time
+tf = 15                                      # Estimation of final time
 Lf = 3π                                      # Estimation of final longitude
 x0 = [P0, ex0, ey0, hx0, hy0, L0]            # Initial state
 xf = [Pf, exf, eyf, hxf, hyf, Lf]            # Final state
