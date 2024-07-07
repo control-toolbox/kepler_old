@@ -10,7 +10,7 @@ using LinearAlgebra
 
 ## Problem definition. Mass in kg, distance in Mm, time in hours (h).
 
-Tmax = 60                                  # Maximum thrust (Newtons)
+Tmax = 6                                   # Maximum thrust (Newtons)
 cTmax = 3600^2 / 1e6; T = Tmax * cTmax     # Conversion from Newtons to kg x Mm / h²
 mass0 = 1500                               # Initial mass of the spacecraft
 β = 1.42e-02                               # Engine specific impulsion
@@ -19,45 +19,42 @@ t0 = 0                                     # Initial time (final time is free)
 x0 = [11.625, 0.75, 0, 6.12e-02, 0, π]     # Initial state (fixed initial longitude)
 yf = [42.165, 0, 0, 0, 0]                  # Final state (free final longitude)
 
-function F0(x)
+function F0(x::Vector{T}) where T
     P, ex, ey, hx, hy, L = x
     pdm = sqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     w = 1 + ex * cl + ey * sl
-
-    F = zeros(eltype(x), 6) # debug: replace eltype by zeros(T, size(x)) instead + with x::Vector{T} where T; or similar
+    F = zeros(T, 6)
     F[6] = w^2 / (P * pdm)
     return F
 end
 
-function F1(x)
+function F1(x::Vector{T}) where T
     P, ex, ey, hx, hy, L = x
     pdm = sqrt(P/μ)
     cl = cos(L)
     sl = sin(L)
-
-    F = zeros(eltype(x), 6)
+    F = zeros(T, 6)
     F[2] = pdm *   sl
     F[3] = pdm * (-cl)
     return F
 end
 
-function F2(x)
+function F2(x::Vector{T}) where T
     P, ex, ey, hx, hy, L = x
     pdm = sqrt(P/μ)
     cl = cos(L)
     sl = sin(L)
     w = 1 + ex * cl + ey * sl
-
-    F = zeros(eltype(x), 6)
+    F = zeros(T, 6)
     F[1] = pdm * 2 * P / w
     F[2] = pdm * (cl + (ex + cl) / w)
     F[3] = pdm * (sl + (ey + sl) / w)
     return F
 end
 
-function F3(x)
+function F3(x::Vector{T}) where T
     P, ex, ey, hx, hy, L = x
     pdm = sqrt(P/μ)
     cl = cos(L)
@@ -66,8 +63,7 @@ function F3(x)
     pdmw = pdm / w
     zz = hx * sl - hy * cl
     uh = (1 + hx^2 + hy^2) / 2
-
-    F = zeros(eltype(x), 6)
+    F = zeros(T, 6)
     F[2] = pdmw * (-zz * ey)
     F[3] = pdmw *   zz * ex
     F[4] = pdmw *   uh * cl
@@ -94,7 +90,7 @@ end
     -1 ≤ hy(t) ≤ 1
     0 ≤ L(t) ≤ 2.5π
     tf → min
-end true
+end
 
 ## Initialisations
 
@@ -108,7 +104,7 @@ tf = 6.080e3; p0 = -[-1.234155379067110e+02, -6.207170881591489e+02, 5.742554220
 
 tf = init[Tmax][1] # debug: update init
 #nlp_init = OCPInit(variable=tf)
-#nlp_sol = solve(ocp; init=nlp_init, grid_size=100) # debug: to be tested
+#nlp_sol = solve(ocp; init=nlp_init, grid_size=100) # to be tested
 
 ## Shooting (1/2)
 
@@ -123,9 +119,10 @@ end
 
 fr = Flow(ocp, ur) # Regular flow (first version)
 
-function shoot(tf, p0)
+function shoot(ξ::Vector{T}) where T
+    tf, p0 = ξ[1], ξ[2:end]
     xf, pf = fr(t0, x0, p0, tf)
-    s = zeros(eltype(tf), 7) # debug: use where T
+    s = zeros(T, 7)
     s[1:5] = xf[1:5] - yf
     s[6] = pf[6]
     s[7] = p0[1]^2 + p0[2]^2 + p0[3]^2 + p0[4]^2 + p0[5]^2 + p0[6]^2 - 1
@@ -137,11 +134,10 @@ end
 tf, p0 = init[Tmax]
 p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
 ξ = [tf ; p0]; # Initial guess
-foo(ξ) = shoot(ξ[1], ξ[2:end])
-jfoo(ξ) = ForwardDiff.jacobian(foo, ξ)
-foo!(s, ξ) = (s[:] = foo(ξ); nothing)
-jfoo!(js, ξ) = (js[:] = jfoo(ξ); nothing)
-@time bvp_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(bvp_sol)
+jshoot(ξ) = ForwardDiff.jacobian(shoot, ξ)
+shoot!(s, ξ) = (s[:] = foo(ξ); nothing)
+jshoot!(js, ξ) = (js[:] = jfoo(ξ); nothing)
+@time bvp_sol = fsolve(shoot!, jshoot!, ξ, show_trace=true); println(bvp_sol)
 
 ## Shooting (2/2)
 
@@ -157,7 +153,7 @@ end
 
 hr = Hamiltonian(hr; autonomous=false)
 fr = Flow(hr) # Regular flow (again)
-@time bvp_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(bvp_sol)
+@time bvp_sol = fsolve(shoot!, jshoot!, ξ, show_trace=true); println(bvp_sol)
 tf = bvp_sol.x[1]; p0 = bvp_sol.x[2:end]
 
 ## Plots
