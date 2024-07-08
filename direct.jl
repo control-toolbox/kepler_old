@@ -21,20 +21,22 @@ hxf, hyf = 0, 0                            # Final ascending node and inclinatio
 
 ## Dynamics
 
+asqrt(x; ε=1e-9) = sqrt(sqrt(x^2+ε^2)) # Avoid issues with AD
+
 function F0(x)
     P, ex, ey, hx, hy, L = x
-    pdm = sqrt(P / μ)
+    pdm = asqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     w = 1 + ex * cl + ey * sl
-    F = zeros(eltype(x), 6)
+    F = zeros(eltype(x), 6) # Use eltype to allow overloading for AD
     F[6] = w^2 / (P * pdm)
     return F
 end
 
 function F1(x)
     P, ex, ey, hx, hy, L = x
-    pdm = sqrt(P / μ)
+    pdm = asqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     F = zeros(eltype(x), 6)
@@ -45,7 +47,7 @@ end
 
 function F2(x)
     P, ex, ey, hx, hy, L = x
-    pdm = sqrt(P / μ)
+    pdm = asqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     w = 1 + ex * cl + ey * sl
@@ -58,7 +60,7 @@ end
 
 function F3(x)
     P, ex, ey, hx, hy, L = x
-    pdm = sqrt(P / μ)
+    pdm = asqrt(P / μ)
     cl = cos(L)
     sl = sin(L)
     w = 1 + ex * cl + ey * sl
@@ -96,7 +98,6 @@ nlp_init = (state=x, control=u, variable=tf) # Initial guess for the NLP
     mass = mass0 - β * T * t
     ẋ(t) == F0(x(t)) + T / mass * (u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)))
     u₁(t)^2 + u₂(t)^2 + u₃(t)^2 ≤ 1
-    -[1, 1, 1] ≤ u(t) ≤ [1, 1, 1]
     .8P0 ≤ P(t) ≤ 1.2Pf
     -1 ≤ ex(t) ≤ 1
     -1 ≤ ey(t) ≤ 1
