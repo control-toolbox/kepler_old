@@ -1,126 +1,176 @@
-# Kepler.jl
+# 2bp.jl
 
-using OrdinaryDiffEq, ForwardDiff, MINPACK, LinearAlgebra, Plots
-
-## Auxiliary flow definition
-
-grad(f, x) = ForwardDiff.gradient(f, x)
-jac(f, x) = ForwardDiff.jacobian(f, x)
-
-function Flow(h; abstol=1e-12, reltol=1e-12)
-
-    function rhs!(dz, z, dummy, t)
-        n = size(z, 1) ÷ 2
-        foo = z -> h(t, z[1:n], z[n+1:2*n])
-        dh = grad(foo, z)
-        dz[1:n] = dh[n+1:2n]
-        dz[n+1:2n] = -dh[1:n]
-    end
-    
-    function f(tspan, x0, p0; abstol=abstol, reltol=reltol, saveat=[])
-        z0 = [ x0; p0 ]
-        ode = ODEProblem(rhs!, z0, tspan)
-        sol = OrdinaryDiffEq.solve(ode, Tsit5(), abstol=abstol, reltol=reltol, saveat=saveat)
-        return sol
-    end
-    
-    function f(t0, x0, p0, tf; abstol=abstol, reltol=reltol, saveat=[])
-        sol = f((t0, tf), x0, p0, abstol=abstol, reltol=reltol, saveat=saveat)
-        n = size(x0, 1)
-        return sol[1:n, end], sol[n+1:2*n, end]
-    end
-    
-    return f
-
-end
+using OptimalControl
+using NLPModelsIpopt
+using OrdinaryDiffEq
+using Plots
+using MINPACK
+using ForwardDiff
+using LinearAlgebra
 
 ## Problem definition
 
-Tmax = 6                                   # maximum thrust
-cTmax = (3600^2) / 1e6                     # conversion from Newtons to kg . Mm / h²
-mass0 = 1500                               # initial mass of the spacecraft
-β = 1.42e-02                               # engine specific impulsion
+Tmax = 60                                  # Maximum thrust (Newtons)
+cTmax = 3600^2 / 1e6; T = Tmax * cTmax     # Conversion from Newtons to kg x Mm / h²
+mass0 = 1500                               # Initial mass of the spacecraft
+β = 1.42e-02                               # Engine specific impulsion
 μ = 5165.8620912                           # Earth gravitation constant
-t0 = 0                                     # initial time (final time is free)
-x0 = [ 11.625, 0.75, 0, 6.12e-02, 0, π ]   # initial state (fixed initial longitude)
-xf_fixed = [ 42.165, 0, 0, 0, 0 ]          # final state (free final longitude)
+P0 = 11.625                                # Initial semilatus rectum
+ex0, ey0 = 0.75, 0                         # Initial eccentricity
+hx0, hy0 = 6.12e-2, 0                      # Initial ascending node and inclination
+L0 = π                                     # Initial longitude
+Pf = 42.165                                # Final semilatus rectum
+exf, eyf = 0, 0                            # Final eccentricity
+hxf, hyf = 0, 0                            # Final ascending node and inclination
 
-init = Dict{Real, Tuple{Real, Vector{Real}}}()
-tf = 15.2055; p0 = -[ .361266, 22.2412, 7.87736, 0, 0, -5.90802 ]; init[60] = (tf, p0)
-tf = 1.320e2; p0 = -[ -4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00 ]; init[6] = (tf, p0)
-tf = 1.210e3; p0 = -[ -2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01 ]; init[0.7] = (tf, p0)
-tf = 6.080e3; p0 = -[ -1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01 ]; init[0.14] = (tf, p0)
+asqrt(x; ε=1e-9) = sqrt(sqrt(x^2+ε^2)) # Avoid issues with AD
 
-tf, p0 = init[Tmax]; Tmax = cTmax * Tmax
-p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
-ξ = [ tf ; p0 ]; # initial guess
-
-## Hamiltonian flow and shooting function
-
-function h(t, x, p)
-    pa, ex, ey, hx, hy, lg = x
-    pdm = sqrt(pa/μ)
-    cl = cos(lg)
-    sl = sin(lg)
-    w = 1 + ex*cl + ey*sl
-    pdmw = pdm / w
-    zz = hx*sl - hy*cl
-    uh = (1 + hx^2 + hy^2) / 2
-
-    f06 = w^2 / (pa*pdm)
-    h0  = p[6] * f06
-
-    f12 = pdm *   sl
-    f13 = pdm * (-cl)
-    h1  = p[2]*f12 + p[3]*f13
-
-    f21 = pdm * 2 * pa / w
-    f22 = pdm * (cl + (ex + cl) / w)
-    f23 = pdm * (sl + (ey + sl) / w)
-    h2  = p[1]*f21 + p[2]*f22 + p[3]*f23
-
-    f32 = pdmw * (-zz*ey)
-    f33 = pdmw *   zz*ex
-    f34 = pdmw * uh * cl
-    f35 = pdmw * uh * sl
-    f36 = pdmw * zz
-    h3  = p[2]*f32 + p[3]*f33 + p[4]*f34 + p[5]*f35 + p[6]*f36
-
-    mass = mass0 - β*Tmax*t
-
-    ψ = sqrt(h1^2 + h2^2 + h3^2)
-
-    r = -1 + h0 + (Tmax/mass) * ψ
-    return r
+function F0(x)
+    P, ex, ey, hx, hy, L = x
+    pdm = asqrt(P / μ)
+    cl = cos(L)
+    sl = sin(L)
+    w = 1 + ex * cl + ey * sl
+    F = zeros(eltype(x), 6) # Use eltype to allow overloading for AD
+    F[6] = w^2 / (P * pdm)
+    return F
 end
 
-f = Flow(h)
+function F1(x)
+    P, ex, ey, hx, hy, L = x
+    pdm = asqrt(P / μ)
+    cl = cos(L)
+    sl = sin(L)
+    F = zeros(eltype(x), 6)
+    F[2] = pdm *   sl
+    F[3] = pdm * (-cl)
+    return F
+end
 
-function shoot(tf, p0)
-    xf, pf = f(t0, x0, p0, tf)
-    s = zeros(eltype(tf), 7)
-    s[1:5] = xf[1:5] - xf_fixed
+function F2(x)
+    P, ex, ey, hx, hy, L = x
+    pdm = asqrt(P / μ)
+    cl = cos(L)
+    sl = sin(L)
+    w = 1 + ex * cl + ey * sl
+    F = zeros(eltype(x), 6)
+    F[1] = pdm * 2 * P / w
+    F[2] = pdm * (cl + (ex + cl) / w)
+    F[3] = pdm * (sl + (ey + sl) / w)
+    return F
+end
+
+function F3(x)
+    P, ex, ey, hx, hy, L = x
+    pdm = asqrt(P / μ)
+    cl = cos(L)
+    sl = sin(L)
+    w = 1 + ex * cl + ey * sl
+    pdmw = pdm / w
+    zz = hx * sl - hy * cl
+    uh = (1 + hx^2 + hy^2) / 2
+    F = zeros(eltype(x), 6)
+    F[2] = pdmw * (-zz * ey)
+    F[3] = pdmw *   zz * ex
+    F[4] = pdmw *   uh * cl
+    F[5] = pdmw *   uh * sl
+    F[6] = pdmw *   zz
+    return F
+end
+
+## Initialisations, including direct solve for Tmax = 60
+
+init = Dict{Real, Tuple{Real, Vector{Real}}}()
+
+if Tmax == 60
+
+    tf = 15                                      # Estimation of final time
+    Lf = 3π                                      # Estimation of final longitude
+    x0 = [P0, ex0, ey0, hx0, hy0, L0]            # Initial state
+    xf = [Pf, exf, eyf, hxf, hyf, Lf]            # Final state
+    x(t) = x0 + (xf - x0) * t / tf               # Linear interpolation
+    u(t) = [0.1, 0.5, 0.]                        # Initial guess for the control
+    nlp_init = (state=x, control=u, variable=tf) # Initial guess for the NLP
+    
+    @def ocp begin
+        tf ∈ R, variable
+        t ∈ [0, tf], time
+        x = (P, ex, ey, hx, hy, L) ∈ R⁶, state
+        u ∈ R³, control
+        x(0) == x0 
+        x[1:5](tf) == xf[1:5]
+        mass = mass0 - β * T * t
+        ẋ(t) == F0(x(t)) + T / mass * (u₁(t) * F1(x(t)) + u₂(t) * F2(x(t)) + u₃(t) * F3(x(t)))
+        u₁(t)^2 + u₂(t)^2 + u₃(t)^2 ≤ 1
+        .8P0 ≤ P(t) ≤ 1.2Pf
+        -1 ≤ ex(t) ≤ 1
+        -1 ≤ ey(t) ≤ 1
+        -1 ≤ hx(t) ≤ 1
+        -1 ≤ hy(t) ≤ 1
+        L0 ≤ L(t) ≤ 1.2Lf
+        tf → min
+    end
+    
+    nlp_sol = OptimalControl.solve(ocp; init=nlp_init, grid_size=100)
+    plot(nlp_sol)
+    tf = nlp_sol.variable; p0 = nlp_sol.costate(0); init[60] = (tf, p0)
+end
+
+tf = 1.320e2; p0 =-[-4.743728539366440e+00, -7.171314869854240e+01, -2.750468309804530e+00, 4.505679923365745e+01, -3.026794475592510e+00, 2.248091067047670e+00]; init[6] = (tf, p0)
+tf = 1.210e3; p0 =-[-2.215319700438820e+01, -4.347109477345140e+01, 9.613188807286992e-01, 3.181800985503019e+02, -2.307236094862410e+00, -5.797863110671591e-01]; init[0.7] = (tf, p0)
+tf = 6.080e3; p0 =-[-1.234155379067110e+02, -6.207170881591489e+02, 5.742554220129187e-01, 1.629324243017332e+03, -2.373935935351530e+00, -2.854066853269850e-01]; init[0.14] = (tf, p0)
+
+## Shooting (1/2)
+
+function ur(t, x, p, tf) # Regular maximising control 
+    H1 = p' * F1(x)
+    H2 = p' * F2(x)
+    H3 = p' * F3(x)
+    u = [H1, H2, H3]
+    u = u / sqrt(u[1]^2 + u[2]^2 + u[3]^2)
+    return u
+end
+
+fr = Flow(ocp, ur) # Regular flow (first version)
+
+function shoot(ξ::Vector{T}) where T
+    tf, p0 = ξ[1], ξ[2:end]
+    xf, pf = fr(0, x0, p0, tf)
+    s = zeros(T, 7)
+    s[1:5] = xf[1:5] - xf[1:5]
     s[6] = pf[6]
     s[7] = p0[1]^2 + p0[2]^2 + p0[3]^2 + p0[4]^2 + p0[5]^2 + p0[6]^2 - 1
     return s
 end
 
-## Solve
-foo(ξ) = shoot(ξ[1], ξ[2:end])
-jfoo(ξ) = jac(foo, ξ)
-foo!(s, ξ) = ( s[:] = foo(ξ); nothing )
-jfoo!(js, ξ) = ( js[:] = jfoo(ξ); nothing )
+tf, p0 = init[Tmax]
+p0 = p0 / norm(p0) # Normalization |p0|=1 for free final time
+ξ = [tf; p0]; # Initial guess
+jshoot(ξ) = ForwardDiff.jacobian(shoot, ξ)
+shoot!(s, ξ) = (s[:] = shoot(ξ); nothing)
+jshoot!(js, ξ) = (js[:] = jshoot(ξ); nothing)
+bvp_sol = fsolve(shoot!, jshoot!, ξ, show_trace=true); println(bvp_sol)
 
-#nl_sol = fsolve(foo!,        ξ, show_trace=true); println(nl_sol)
-nl_sol = fsolve(foo!, jfoo!, ξ, show_trace=true); println(nl_sol)
+## Shooting (2/2)
 
-if nl_sol.converged
-    tf = nl_sol.x[1]; p0 = nl_sol.x[2:end]
-else
-    error("Not converged")
+hr = (t, x, p) -> begin # Regular maximised Hamiltonian (more efficient)
+    H0 = p' * F0(x)
+    H1 = p' * F1(x)
+    H2 = p' * F2(x)
+    H3 = p' * F3(x)
+    mass = mass0 - β*T*t
+    h = H0 + T / mass * sqrt(H1^2 + H2^2 + H3^2) 
+    return h
 end
 
-ode_sol = f((t0, tf), x0, p0)
+hr = Hamiltonian(hr; autonomous=false)
+fr = Flow(hr) # Regular flow (again)
+bvp_sol = fsolve(shoot!, jshoot!, ξ, show_trace=true); println(bvp_sol)
+tf = bvp_sol.x[1]; p0 = bvp_sol.x[2:end]
+
+## Plots
+
+ode_sol = fr((0, tf), x0, p0)
 t  = ode_sol.t; N = size(t, 1)
 P  = ode_sol[1, :]
 ex = ode_sol[2, :]
@@ -128,18 +178,16 @@ ey = ode_sol[3, :]
 hx = ode_sol[4, :]
 hy = ode_sol[5, :]
 L  = ode_sol[6, :]
-cL = @. cos(L)
-sL = @. sin(L)
-W  = @. 1 + ex*cL + ey*sL
-Z  = @. hx*sL - hy*cL
+cL = cos.(L)
+sL = sin.(L)
+w  = @. 1 + ex * cL + ey * sL
+Z  = @. hx * sL - hy * cL
 C  = @. 1 + hx^2 + hy^2
-q1 = @. P *( (1 + hx^2 - hy^2)*cL + 2*hx*hy*sL ) / (C*W)
-q2 = @. P *( (1 - hx^2 + hy^2)*sL + 2*hx*hy*cL ) / (C*W)
-q3 = @. 2*P*Z / (C*W)
+q1 = @. P *((1 + hx^2 - hy^2) * cL + 2 * hx * hy * sL) / (C * w)
+q2 = @. P *((1 - hx^2 + hy^2) * sL + 2 * hx * hy * cL) / (C * w)
+q3 = @. 2 * P * Z / (C * w)
 
-plt1 = plot3d(q1, q2, q3; xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
-
-plt2 = plot3d(1, xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
+plt1 = plot3d(1; xlim = (-60, 60), ylim = (-60, 60), zlim = (-5, 5), title = "Orbit transfer", legend=false)
 @gif for i = 1:N
-    push!(plt2, q1[i], q2[i], q3[i])
-end every N ÷ 100
+    push!(plt1, q1[i], q2[i], q3[i])
+end every N ÷ min(N, 100) 
